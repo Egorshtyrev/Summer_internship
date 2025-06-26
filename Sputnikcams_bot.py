@@ -1,6 +1,7 @@
 import os
+import asyncio
 from datetime import datetime
-from telegram import Update, InputFile
+from telegram import Bot, Update, InputFile
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -9,57 +10,68 @@ from telegram.ext import (
     ContextTypes,
 )
 
-TOKEN = "7844049761:AAG5_27DvsUGz26miLyGR29eYEDkfe6Me10"
+# Configuration
+BOT_TOKEN = "7844049761:AAG5_27DvsUGz26miLyGR29eYEDkfe6Me10"
+AUTO_SEND_CHAT_ID = 1124318054  # Where to auto-send the meme
+MEME_PATH = r"C:\Users\User\Desktop\Мемы\meme.jpg"
 
-# Handler for /start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 Send me a camera screenshot, and I'll post it with details!")
+class MemeBot:
+    def __init__(self):
+        self.app = Application.builder().token(BOT_TOKEN).build()
+        self.setup_handlers()
 
-# Handler for receiving photos
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Get the photo file
-    photo_file = await update.message.photo[-1].get_file()
-    
-    # Generate a filename with timestamp
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"camera_screenshot_{current_time}.jpg"
-    
-    # Download the photo
-    await photo_file.download_to_drive(filename)
-    
-    # Extract additional info (e.g., from caption or hardcoded)
-    camera_id = "Camera-1"  # Replace with dynamic data if needed
-    description = update.message.caption or "No description provided."
-    
-    # Format the response message
-    message = (
-        f"🕒 **Time:** `{current_time}`\n"
-        f"📷 **Camera:** `{camera_id}`\n"
-        f"📝 **Description:** {description}\n"
-    )
-    
-    # Send the image back with details
-    with open(filename, 'rb') as photo:
-        await update.message.reply_photo(
-            photo=InputFile(photo),
-            caption=message,
-            parse_mode="Markdown"
+    def setup_handlers(self):
+        self.app.add_handler(CommandHandler("start", self.start))
+        self.app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("🤖 Meme Bot Active! Send me photos or use /sendmeme")
+
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Process received photos with timestamps"""
+        photo_file = await update.message.photo[-1].get_file()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        filename = f"photo_{timestamp.replace(':','-')}.jpg"
+        
+        await photo_file.download_to_drive(filename)
+        
+        caption = (
+            f"🕒 Time: {timestamp}\n"
+            f"📝 Caption: {update.message.caption or 'No description'}"
         )
-    
-    # Optional: Delete the downloaded file
-    os.remove(filename)
+        
+        with open(filename, 'rb') as photo:
+            await update.message.reply_photo(
+                photo=InputFile(photo),
+                caption=caption
+            )
+        os.remove(filename)
 
-def main():
-    app = Application.builder().token(TOKEN).build()
-    
-    # Command handlers
-    app.add_handler(CommandHandler("start", start))
-    
-    # Photo handler (only accepts images)
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    
-    # Start polling
-    app.run_polling()
+    async def send_initial_meme(self):
+        """Auto-send meme on startup"""
+        if os.path.exists(MEME_PATH):
+            bot = self.app.bot
+            with open(MEME_PATH, 'rb') as meme:
+                await bot.send_photo(
+                    chat_id=AUTO_SEND_CHAT_ID,
+                    photo=InputFile(meme),
+                    caption=f"🤖 Meme Delivery! 🕒 {datetime.now().strftime('%H:%M:%S')}"
+                )
+
+    async def run(self):
+        await self.app.initialize()
+        await self.app.start()
+        await self.send_initial_meme()  # Auto-send meme
+        await self.app.updater.start_polling()
+        
+        # Keep running until stopped
+        while True:
+            await asyncio.sleep(1)
 
 if __name__ == "__main__":
-    main()
+    bot = MemeBot()
+    
+    try:
+        asyncio.run(bot.run())
+    except KeyboardInterrupt:
+        print("Bot stopped by user")
